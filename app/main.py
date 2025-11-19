@@ -139,13 +139,23 @@ def draw_board(screen):
     """繪製棋盤線和背景"""
     screen.fill(BROWN)
 
+    # 棋盤網格的最外側座標，即最後一條線的位置
+    MAX_GRID_COORD = (BOARD_SIZE - 1) * SQUARE_SIZE + MARGIN
     # 繪製線條
     for i in range(BOARD_SIZE):
         coord = i * SQUARE_SIZE + MARGIN
-        # 垂直線
-        pygame.draw.line(screen, BLACK, (coord, MARGIN), (coord, HEIGHT - MARGIN), LINE_THICKNESS)
-        # 水平線
-        pygame.draw.line(screen, BLACK, (MARGIN, coord), (WIDTH - MARGIN, coord), LINE_THICKNESS)
+
+        # 垂直線：從 Y=MARGIN 畫到 Y=MAX_GRID_COORD
+        pygame.draw.line(screen, BLACK,
+                         (coord, MARGIN),
+                         (coord, MAX_GRID_COORD),
+                         LINE_THICKNESS)
+
+        # 水平線：從 X=MARGIN 畫到 X=MAX_GRID_COORD
+        pygame.draw.line(screen, BLACK,
+                         (MARGIN, coord),
+                         (MAX_GRID_COORD, coord),
+                         LINE_THICKNESS)
 
     # 標記星位 (9x9 中心點)
     star_points = [
@@ -182,7 +192,7 @@ def draw_info(screen):
 
     screen.blit(info_surf, (10, 10))
     screen.blit(black_cap_surf, (10, HEIGHT - 40))
-    screen.blit(white_cap_surf, (WIDTH - 200, HEIGHT - 40))
+    screen.blit(white_cap_surf, (WIDTH - 250, HEIGHT - 40))
 
 
 # --- 5. 主循環 ---
