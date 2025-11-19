@@ -27,14 +27,25 @@ WIDTH = HEIGHT = BOARD_SIZE * SQUARE_SIZE + 2 * MARGIN
 
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
-BROWN = (205, 133, 63)  # 棋盤顏色
+# BROWN = (205, 133, 63)  # 棋盤顏色
+BROWN = (160, 120, 90) #🪵 現代原木 (Modern Oak)
 RED = (255, 0, 0)
 
 # 初始化 Pygame
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("基礎圍棋 (9x9)")
-font = pygame.font.Font(None, 36)
+
+# 嘗試指定一個常見的 Unicode 字體路徑
+try:
+    # 範例：如果您的系統有 Arial，請使用絕對或相對路徑
+    # 替換成您系統中實際的字體路徑
+    UNICODE_FONT_PATH = "Arial.ttf"
+    font = pygame.font.Font(UNICODE_FONT_PATH, 30)
+    print(f"Loaded font: {UNICODE_FONT_PATH}")
+except pygame.error:
+    print("Warning: Could not load specified Unicode font. Falling back to default.")
+    font = pygame.font.Font(None, 30)
 
 # --- 2. 數據結構 ---
 # 棋盤狀態: 0=空, 1=黑棋, 2=白棋
