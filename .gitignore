@@ -121,3 +121,5 @@ poetry.toml
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+app/service_account.json

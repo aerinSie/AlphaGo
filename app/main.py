@@ -1,6 +1,22 @@
 import pygame
 import sys
 from collections import deque
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import time # 用於生成時間戳作為 Game ID
+
+# --- 2. Google Sheet 設定 ---
+# 請將 service_account.json 替換成您的憑證檔案名稱
+SCOPE = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/drive']
+try:
+    # 嘗試載入憑證，如果找不到檔案會報錯
+    CREDS = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', SCOPE)
+except FileNotFoundError:
+    print("WARNING: service_account.json not found. Google Sheet upload disabled.")
+    CREDS = None
+
+# 請替換成您建立的 Google Sheet 名稱
+SHEET_NAME = "AlphaGoApi"
 
 # --- 1. 遊戲參數設定 ---
 BOARD_SIZE = 9  # 棋盤大小 (9x9)
@@ -26,7 +42,9 @@ board = [[0 for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
 current_player = 1  # 1: Black, 2: White
 captured_stones = {1: 0, 2: 0}  # 提子計數 {黑: 0, 白: 0}
 previous_board = None  # 用於判斷打劫
-
+# 新增: 儲存歷史棋盤狀態的列表
+# 每個元素是一個棋盤狀態的深拷貝
+move_history = []
 
 # --- 3. 核心邏輯函數 ---
 
@@ -195,6 +213,48 @@ def draw_info(screen):
     screen.blit(white_cap_surf, (WIDTH - 250, HEIGHT - 40))
 
 
+# --- 3. 核心邏輯函數 之後新增 ---
+def upload_move_history_to_sheet(history_data):
+    """將落子歷史紀錄上傳到 Google Sheet"""
+
+    if not CREDS:
+        print("Google Sheet upload failed: Credentials not loaded.")
+        return
+
+    # 1. 格式化數據
+
+    # 建立一個唯一的遊戲 ID (例如: 時間戳)
+    game_id = time.strftime("%Y%m%d_%H%M%S")
+
+    # 將每一手棋格式化為 'B(r,c)' 或 'W(r,c)'
+    move_sequence = []
+    for move in history_data:
+        player_char = 'B' if move['player'] == 1 else 'W'
+        r, c = move['move']
+        # 顯示為人類可讀的座標 (例如 1-19, 這裡使用 0-8)
+        move_str = f"{player_char}({r},{c})"
+        move_sequence.append(move_str)
+
+    # 2. 連接並寫入 Sheet
+    try:
+        client = gspread.authorize(CREDS)
+        sheet = client.open(SHEET_NAME).sheet1  # 預設寫入第一個工作表
+
+        # 準備寫入的數據: [Game ID, 提子數, Move 1, Move 2, ...]
+        row_data = [game_id] + [f"B Cap: {captured_stones[2]}, W Cap: {captured_stones[1]}"] + move_sequence
+
+        # 確保有標題行 (如果 Sheet 是空的)
+        if not sheet.row_values(1):
+            header = ["Game ID", "Final Captures"] + [f"Move {i + 1}" for i in range(len(move_sequence))]
+            sheet.append_row(header)
+
+        # 寫入新的行數據
+        sheet.append_row(row_data)
+        print(f"成功將 {len(move_sequence)} 步棋記錄上傳到 Google Sheet！")
+
+    except Exception as e:
+        print(f"Google Sheet 上傳時發生錯誤: {e}")
+
 # --- 5. 主循環 ---
 
 running = True
@@ -202,6 +262,15 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+
+            # 新增: 按下 E 鍵結束遊戲並上傳
+        if event.type == pygame.KEYDOWN:
+            print(move_history)
+            if event.key == pygame.K_e:
+                if move_history:
+                    # 呼叫上傳函數
+                    upload_move_history_to_sheet(move_history)
+                running = False  # 結束 Pygame 視窗
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             x, y = event.pos
@@ -218,6 +287,14 @@ while running:
                 is_ok, new_board, captured_count = is_valid_move(r, c, current_player, board, previous_board)
 
                 if is_ok:
+                    # 💖 關鍵: 儲存歷史紀錄 - 必須在這裡執行
+                    # **重點：這裡儲存的是落子前的盤面**
+                    move_history.append({
+                        'board': [row[:] for row in board],
+                        'player': current_player,
+                        'move': (r, c)
+                    })
+
                     # 記錄當前狀態作為下一輪的比較對象 (打劫判斷)
                     previous_board = [row[:] for row in board]
 
