@@ -19,7 +19,8 @@ except FileNotFoundError:
 SHEET_NAME = "AlphaGoApi"
 
 # --- 1. 遊戲參數設定 ---
-BOARD_SIZE = 9  # 棋盤大小 (9x9)
+# BOARD_SIZE, WIDTH, HEIGHT will be set dynamically
+BOARD_SIZE = 9
 SQUARE_SIZE = 50  # 每個格子的邊長 (像素)
 LINE_THICKNESS = 2
 MARGIN = 50  # 邊緣留白
@@ -30,11 +31,14 @@ WHITE = (255, 255, 255)
 # BROWN = (205, 133, 63)  # 棋盤顏色
 BROWN = (160, 120, 90) #🪵 現代原木 (Modern Oak)
 RED = (255, 0, 0)
+LIGHT_GRAY = (200, 200, 200) # For buttons
+DARK_GRAY = (100, 100, 100)
 
 # 初始化 Pygame
 pygame.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("基礎圍棋 (9x9)")
+# screen will be set in run_game
+screen = None
+pygame.display.set_caption("AlphaGo")
 
 # 嘗試指定一個常見的 Unicode 字體路徑
 try:
@@ -47,14 +51,12 @@ except pygame.error:
     print("Warning: Could not load specified Unicode font. Falling back to default.")
     font = pygame.font.Font(None, 30)
 
-# --- 2. 數據結構 ---
-# 棋盤狀態: 0=空, 1=黑棋, 2=白棋
-board = [[0 for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
-current_player = 1  # 1: Black, 2: White
-captured_stones = {1: 0, 2: 0}  # 提子計數 {黑: 0, 白: 0}
-previous_board = None  # 用於判斷打劫
-# 新增: 儲存歷史棋盤狀態的列表
-# 每個元素是一個棋盤狀態的深拷貝
+# --- 2. 數據結構 (Globals) ---
+# 這些將在 run_game 中重置
+board = []
+current_player = 1
+captured_stones = {1: 0, 2: 0}
+previous_board = None
 move_history = []
 
 # --- 3. 核心邏輯函數 ---
@@ -186,14 +188,23 @@ def draw_board(screen):
                          (MAX_GRID_COORD, coord),
                          LINE_THICKNESS)
 
-    # 標記星位 (9x9 中心點)
-    star_points = [
-        (2 * SQUARE_SIZE + MARGIN, 2 * SQUARE_SIZE + MARGIN),
-        (6 * SQUARE_SIZE + MARGIN, 2 * SQUARE_SIZE + MARGIN),
-        (2 * SQUARE_SIZE + MARGIN, 6 * SQUARE_SIZE + MARGIN),
-        (6 * SQUARE_SIZE + MARGIN, 6 * SQUARE_SIZE + MARGIN),
-        (4 * SQUARE_SIZE + MARGIN, 4 * SQUARE_SIZE + MARGIN)  # 天元
-    ]
+    # 標記星位
+    star_points = []
+    if BOARD_SIZE == 9:
+        star_points = [
+            (2 * SQUARE_SIZE + MARGIN, 2 * SQUARE_SIZE + MARGIN),
+            (6 * SQUARE_SIZE + MARGIN, 2 * SQUARE_SIZE + MARGIN),
+            (2 * SQUARE_SIZE + MARGIN, 6 * SQUARE_SIZE + MARGIN),
+            (6 * SQUARE_SIZE + MARGIN, 6 * SQUARE_SIZE + MARGIN),
+            (4 * SQUARE_SIZE + MARGIN, 4 * SQUARE_SIZE + MARGIN)  # 天元
+        ]
+    elif BOARD_SIZE == 19:
+        # 19路星位 (3, 9, 15) -> index 3, 9, 15 -> 4th, 10th, 16th line
+        points = [3, 9, 15]
+        for r in points:
+            for c in points:
+                star_points.append((c * SQUARE_SIZE + MARGIN, r * SQUARE_SIZE + MARGIN))
+
     for x, y in star_points:
         pygame.draw.circle(screen, BLACK, (x, y), 5)
 
@@ -209,7 +220,7 @@ def draw_stones(screen, board_state):
                 pygame.draw.circle(screen, color, (center_x, center_y), SQUARE_SIZE // 2 - 2)
 
 
-def draw_info(screen):
+def draw_info(screen, back_btn_rect, mouse_pos):
     """繪製遊戲資訊"""
     info_text = f"Player: {'Black' if current_player == 1 else 'White'} ({'●' if current_player == 1 else '○'})"
     black_cap_text = f"Black Captures: {captured_stones[2]}"
@@ -222,6 +233,9 @@ def draw_info(screen):
     screen.blit(info_surf, (10, 10))
     screen.blit(black_cap_surf, (10, HEIGHT - 40))
     screen.blit(white_cap_surf, (WIDTH - 250, HEIGHT - 40))
+    
+    # Draw Back Button
+    draw_button(screen, back_btn_rect, "Back", back_btn_rect.collidepoint(mouse_pos))
 
 
 # --- 3. 核心邏輯函數 之後新增 ---
@@ -266,66 +280,158 @@ def upload_move_history_to_sheet(history_data):
     except Exception as e:
         print(f"Google Sheet 上傳時發生錯誤: {e}")
 
-# --- 5. 主循環 ---
+# --- Entry Screen ---
 
-running = True
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
+def draw_button(screen, rect, text, hover=False):
+    color = LIGHT_GRAY if not hover else DARK_GRAY
+    pygame.draw.rect(screen, color, rect)
+    pygame.draw.rect(screen, BLACK, rect, 2)
+    
+    text_surf = font.render(text, True, BLACK if not hover else WHITE)
+    text_rect = text_surf.get_rect(center=rect.center)
+    screen.blit(text_surf, text_rect)
 
+def show_entry_screen():
+    entry_width, entry_height = 400, 300
+    entry_screen = pygame.display.set_mode((entry_width, entry_height))
+    pygame.display.set_caption("AlphaGo - Select Board Size")
+    
+    btn_9_rect = pygame.Rect(50, 100, 120, 60)
+    btn_19_rect = pygame.Rect(230, 100, 120, 60)
+    
+    running = True
+    while running:
+        mouse_pos = pygame.mouse.get_pos()
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return None # Signal to exit app
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if btn_9_rect.collidepoint(mouse_pos):
+                    return 9
+                if btn_19_rect.collidepoint(mouse_pos):
+                    return 19
+        
+        entry_screen.fill(WHITE)
+        
+        title_surf = font.render("Select Board Size", True, BLACK)
+        title_rect = title_surf.get_rect(center=(entry_width // 2, 50))
+        entry_screen.blit(title_surf, title_rect)
+        
+        draw_button(entry_screen, btn_9_rect, "9 x 9", btn_9_rect.collidepoint(mouse_pos))
+        draw_button(entry_screen, btn_19_rect, "19 x 19", btn_19_rect.collidepoint(mouse_pos))
+        
+        pygame.display.flip()
+
+# --- Main Game Loop ---
+
+def run_game(size):
+    global BOARD_SIZE, WIDTH, HEIGHT, SQUARE_SIZE, screen, board, current_player, captured_stones, previous_board, move_history
+    
+    BOARD_SIZE = size
+    
+    # Dynamic resizing
+    MAX_HEIGHT = 800
+    # Calculate max possible square size to fit in MAX_HEIGHT
+    # HEIGHT = BOARD_SIZE * SQUARE_SIZE + 2 * MARGIN
+    # MAX_HEIGHT >= BOARD_SIZE * sq + 2 * MARGIN
+    # sq <= (MAX_HEIGHT - 2 * MARGIN) / BOARD_SIZE
+    
+    calculated_sq = (MAX_HEIGHT - 2 * MARGIN) // BOARD_SIZE
+    SQUARE_SIZE = min(50, calculated_sq) # Cap at 50
+    
+    WIDTH = HEIGHT = BOARD_SIZE * SQUARE_SIZE + 2 * MARGIN
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption(f"AlphaGo ({BOARD_SIZE}x{BOARD_SIZE})")
+    
+    # Reset game state
+    board = [[0 for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+    current_player = 1
+    captured_stones = {1: 0, 2: 0}
+    previous_board = None
+    move_history = []
+    
+    # Back Button Rect (Top Right)
+    back_btn_rect = pygame.Rect(WIDTH - 110, 10, 100, 40)
+    
+    running = True
+    while running:
+        mouse_pos = pygame.mouse.get_pos()
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return 'EXIT'
+    
             # 新增: 按下 E 鍵結束遊戲並上傳
-        if event.type == pygame.KEYDOWN:
-            print(move_history)
-            if event.key == pygame.K_e:
-                if move_history:
-                    # 呼叫上傳函數
-                    upload_move_history_to_sheet(move_history)
-                running = False  # 結束 Pygame 視窗
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_e:
+                    if move_history:
+                        print(move_history)
+                        # 呼叫上傳函數
+                        upload_move_history_to_sheet(move_history)
+                    return 'EXIT' # Or maybe just return to menu? Let's keep it as exit for now or user preference. 
+                    # Actually, usually E just ends the game. Let's assume it exits the game loop but maybe we want to go back to menu?
+                    # For now, let's stick to existing behavior: running = False -> return None (implied)
+                    running = False
+    
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if back_btn_rect.collidepoint(mouse_pos):
+                    return 'BACK'
 
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            x, y = event.pos
+                x, y = event.pos
+    
+                # 轉換像素座標到棋盤座標 (R, C)
+                if MARGIN - SQUARE_SIZE / 2 < x < WIDTH - MARGIN + SQUARE_SIZE / 2 and \
+                        MARGIN - SQUARE_SIZE / 2 < y < HEIGHT - MARGIN + SQUARE_SIZE / 2:
+    
+                    # 找到最接近的網格交叉點
+                    c = round((x - MARGIN) / SQUARE_SIZE)
+                    r = round((y - MARGIN) / SQUARE_SIZE)
+    
+                    # 執行落子判斷
+                    is_ok, new_board, captured_count = is_valid_move(r, c, current_player, board, previous_board)
+    
+                    if is_ok:
+                        # 💖 關鍵: 儲存歷史紀錄 - 必須在這裡執行
+                        # **重點：這裡儲存的是落子前的盤面**
+                        move_history.append({
+                            'board': [row[:] for row in board],
+                            'player': current_player,
+                            'move': (r, c)
+                        })
+    
+                        # 記錄當前狀態作為下一輪的比較對象 (打劫判斷)
+                        previous_board = [row[:] for row in board]
+    
+                        # 更新棋盤狀態
+                        board = new_board
+    
+                        # 更新提子數
+                        captured_stones[current_player] += captured_count
+    
+                        # 切換玩家
+                        current_player = 3 - current_player
+                    else:
+                        print("Invalid move: Suicide, already occupied, or Ko rule violation.")
+    
+        # 繪製畫面
+        draw_board(screen)
+        draw_stones(screen, board)
+        draw_info(screen, back_btn_rect, mouse_pos)
+    
+        pygame.display.flip()
+    
+    return 'EXIT'
 
-            # 轉換像素座標到棋盤座標 (R, C)
-            if MARGIN - SQUARE_SIZE / 2 < x < WIDTH - MARGIN + SQUARE_SIZE / 2 and \
-                    MARGIN - SQUARE_SIZE / 2 < y < HEIGHT - MARGIN + SQUARE_SIZE / 2:
-
-                # 找到最接近的網格交叉點
-                c = round((x - MARGIN) / SQUARE_SIZE)
-                r = round((y - MARGIN) / SQUARE_SIZE)
-
-                # 執行落子判斷
-                is_ok, new_board, captured_count = is_valid_move(r, c, current_player, board, previous_board)
-
-                if is_ok:
-                    # 💖 關鍵: 儲存歷史紀錄 - 必須在這裡執行
-                    # **重點：這裡儲存的是落子前的盤面**
-                    move_history.append({
-                        'board': [row[:] for row in board],
-                        'player': current_player,
-                        'move': (r, c)
-                    })
-
-                    # 記錄當前狀態作為下一輪的比較對象 (打劫判斷)
-                    previous_board = [row[:] for row in board]
-
-                    # 更新棋盤狀態
-                    board = new_board
-
-                    # 更新提子數
-                    captured_stones[current_player] += captured_count
-
-                    # 切換玩家
-                    current_player = 3 - current_player
-                else:
-                    print("Invalid move: Suicide, already occupied, or Ko rule violation.")
-
-    # 繪製畫面
-    draw_board(screen)
-    draw_stones(screen, board)
-    draw_info(screen)
-
-    pygame.display.flip()
-
-pygame.quit()
-sys.exit()
+if __name__ == "__main__":
+    while True:
+        selected_size = show_entry_screen()
+        if selected_size is None:
+            break
+        result = run_game(selected_size)
+        if result == 'EXIT':
+            break
+        # If result == 'BACK', loop continues and shows entry screen again
+        
+    pygame.quit()
+    sys.exit()
